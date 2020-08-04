@@ -1,0 +1,162 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1561\cocoasubrtf610
+{\fonttbl\f0\fnil\fcharset0 Menlo-Regular;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 import numpy as np\
+import pandas as pd\
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+\cf0 \
+import logging\
+import os\
+import re\
+import sys\
+\
+\
+\
+\
+### Drop outliers or truncate in depending on dataset size \
+def outlier_management (data, columns): \
+    \
+    ## drop any columns which have fewer than 5 levels; assumption = they are categorical/boolean \
+    for col in columns:\
+        if len(data[col].unique())<=5:\
+            columns.remove(col)\
+        else: \
+            print(f"\{[col]\} is kept")\
+    print('')\
+    print(columns)\
+    print('')\
+    col_zscore_list = []\
+    \
+    ### calculates z-scores for all numeric columns\
+    for col in columns:\
+        col_zscore = col + '_zscore'\
+        col_zscore_list.append(col_zscore)\
+        data[col_zscore] = abs((data[col] - data[col].mean())/data[col].std(ddof=0))\
+    \
+    ### drops or truncates depending on size \
+    df_length = len(data)\
+\
+    if df_length>30000:\
+        for col in col_zscore_list:\
+#             df = data[(data[col] < 3).all(axis=1)]\
+            data = data[data[col] < 3]\
+    else:\
+        print('test')\
+\
+    print(f" Before outlier management :\{df_length\}; After outlier management \{len(data)\}")  \
+    print('')\
+    print(f" % of dataset retained :\{len(data)/df_length\}")\
+    return data\
+\
+\
+\
+\
+def check_outlier_management(data, columns): \
+    for col in columns: \
+        print(f" \{col\} : \{data[col].max()\}")\
+        print('')\
+\
+\
+def describe_data(data):\
+    print(f"shape: \{data.shape\}")\
+    print('')\
+    print(data.dtypes)\
+\
+    \
+    ## assume first id column in the dataset (in terms of left to right order)\
+    try:\
+        id_column=data.filter(like='id').columns.to_list()[0]\
+        print('')\
+        print(f"Column taken as id: \{id_column\}")\
+        print(f"If \{len(data)\} = \{len(data[id_column].unique())\}, then dataframe is at this level") \
+\
+    except:\
+        print(colored('No id column','red', attrs=['bold']))\
+\
+    \
+    print('')\
+    return data.head(3)\
+\
+\
+def categorical_randomization(data):\
+    \
+    """ Function takes all the categorical variables in the dataframe and creates frequency tables by \
+    Control v Variant in order to check randomization. \
+    \
+    Could introduce a % test to see if they are really that far off. E.g. if greater than 5% relative difference \
+    between groups flag as problematic"""\
+\
+    categorical_variables = data.select_dtypes('object').columns.tolist()\
+    categorical_variables.remove('exp_group')\
+#     print(f"Categorical Variables: \{categorical_variables\}")\
+    \
+    freq_table=pd.DataFrame()\
+    for i in categorical_variables: \
+        var_table=pd.DataFrame(data[['exp_group',i]].pivot_table(index='exp_group', columns=i, \
+                                aggfunc=len, fill_value=0)).reset_index()\
+\
+        levels_list = var_table.columns.tolist()\
+        levels_list.remove('exp_group')\
+\
+        for l in levels_list: \
+            var_table[str("pct_" + l)] = var_table[l]/var_table.sum(axis=1)\
+        \
+        freq_table = pd.concat([freq_table, var_table], axis =1)\
+    \
+    \
+    \
+    \
+    """Clean up freq_table & flag problematic randomization VARIANCE BETWEEN GROUPS > 5% """\
+    \
+    freq_table=freq_table.transpose()\
+    freq_table.reset_index(inplace=True)\
+    freq_table.columns = ['categorical_variable', 'Control', 'Variant']\
+    freq_table=freq_table[freq_table.categorical_variable !='exp_group']\
+    \
+    freq_table['pct_variable']=freq_table['categorical_variable'].str.contains("pct")\
+    freq_table['group_variance'] = np.where(freq_table['pct_variable'] == True,\
+                                            abs((freq_table['Control'] - freq_table['Variant'])/freq_table['Control']) , 0)\
+\
+\
+    print(colored('Following categorical variables have greater than 5% variance between Control & Variant',\
+                  'red', attrs=['bold']))\
+    print("")\
+    print(freq_table[freq_table.group_variance >= 0.05])\
+    \
+    \
+    pd.options.display.max_rows = 1000                              ## increase the length you can see in notebooks\
+    return freq_table  \
+\
+\
+def transform_to_dates(data):\
+\
+    to_transform_dates=data.filter(like='date').columns.to_list()\
+    if len(to_transform_dates) == 0:\
+        print('no objects named date; trying time')\
+        to_transform_dates=data.filter(like='time').columns.to_list()\
+        for i in to_transform_dates:\
+            data[i] = pd.to_datetime(data[i])\
+    else: \
+        for i in to_transform_dates:\
+            data[i] = pd.to_datetime(data[i])\
+            \
+    print(data.dtypes)    \
+    return data\
+\
+def make_dummies(data): \
+    dummies_list = []\
+    variables=data.select_dtypes('object').columns.tolist()\
+    print(variables)\
+    \
+    \
+    for var in variables:   \
+        dummies_list = pd.get_dummies(data[var]).rename(columns=lambda x: str(var) + '_' + str(x))\
+        data=data.join(dummies_list)\
+#         del dummies_list\
+    \
+    return data                               \
+}
